@@ -2,6 +2,7 @@ awscli
 loguru
 pip
 python-dotenv
+rich
 ruff
 tqdm
 typer
