@@ -74,7 +74,7 @@ text_file = keras.utils.get_file(
     origin="http://storage.googleapis.com/download.tensorflow.org/data/spa-eng.zip",
     extract=True,
 )
-text_file = pathlib.Path(text_file).parent / "spa-eng" / "spa.txt"
+text_file = pathlib.Path(text_file) / "spa-eng" / "spa.txt"
 
 """
 ## Parsing the data
