@@ -7,6 +7,7 @@ Description: Implementing a sequence-to-sequence Transformer and training it on 
 Accelerator: GPU
 
 Grabbed from https://github.com/keras-team/keras-io/blob/master/examples/nlp/neural_machine_translation_with_transformer.py @ 7a85372
+Minor adjusments have been made to get it run on TF 2.19/Keras 3.12
 """
 
 """
@@ -415,7 +416,12 @@ x = PositionalEmbedding(sequence_length, vocab_size, embed_dim)(decoder_inputs)
 x = TransformerDecoder(embed_dim, latent_dim, num_heads)([x, encoder_outputs])
 x = layers.Dropout(0.5)(x)
 decoder_outputs = layers.Dense(vocab_size, activation="softmax")(x)
-decoder = keras.Model([decoder_inputs, encoded_seq_inputs], decoder_outputs)
+# NOTE: This doesn't compile on current Keras (I/O mismatch w/ encoded_seq_inputs)
+#       AFAICT, this is supposed to model the cross-attention (c.f., the KerasHub variant).
+#       Fortunately, this example doesn't actually use the encoder/decoder blocks on their own,
+#       so we can comment this out.
+#       Unfortunately, we *do* want to be able to do that ourselves, sooooo ;o).
+# decoder = keras.Model([decoder_inputs, encoded_seq_inputs], decoder_outputs)
 
 transformer = keras.Model(
     {"encoder_inputs": encoder_inputs, "decoder_inputs": decoder_inputs},
