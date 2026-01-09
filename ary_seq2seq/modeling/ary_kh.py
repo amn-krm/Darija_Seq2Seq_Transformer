@@ -342,8 +342,8 @@ def eval_on_test(
 
 	test_loss, test_acc = transformer.evaluate(test_ds, verbose=0)
 
-	print(f"Test loss: <blue>{test_loss:.4f}</blue>")
-	print(f"Test accuracy: <blue>{test_acc:.4f}</blue>")
+	logger.info(f"Test loss: <blue>{test_loss:.4f}</blue>")
+	logger.info(f"Test accuracy: <blue>{test_acc:.4f}</blue>")
 	return test_loss, test_acc
 
 
