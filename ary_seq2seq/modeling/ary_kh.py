@@ -281,9 +281,13 @@ def train_model(transformer: keras.Model, train_ds: TranslationDataset, val_ds: 
 
 # Inference
 def decode_sequence(
-	transformer: keras.Model, ary_lookup: StringLookup, ary_index_lookup: dict[int, str], sentence: str
+	transformer: keras.Model,
+	eng_lookup: StringLookup,
+	ary_lookup: StringLookup,
+	ary_index_lookup: dict[int, str],
+	sentence: str,
 ) -> str:
-	enc = pad_sequences(vectorize_eng([sentence]), MAX_SEQUENCE_LENGTH)
+	enc = pad_sequences(vectorize_eng([sentence], eng_lookup), MAX_SEQUENCE_LENGTH)
 
 	decoded_ids = [int(ary_lookup("[start]"))]
 	end_id = int(ary_lookup("[end]"))
@@ -345,13 +349,17 @@ def eval_on_test(
 
 # Qualitative inference examples
 def sample_inference(
-	transformer: keras.Model, ary_lookup: StringLookup, ary_index_lookup: dict[int, str], test_pairs: SentPairList
+	transformer: keras.Model,
+	eng_lookup: StringLookup,
+	ary_lookup: StringLookup,
+	ary_index_lookup: dict[int, str],
+	test_pairs: SentPairList,
 ) -> None:
 	NUM_EXAMPLES = 20
 	examples = []
 
 	for eng, ref in random.sample(test_pairs, NUM_EXAMPLES):
-		pred = decode_sequence(transformer, ary_lookup, ary_index_lookup, eng)
+		pred = decode_sequence(transformer, eng_lookup, ary_lookup, ary_index_lookup, eng)
 		examples.append(
 			{
 				"english": eng,
@@ -401,10 +409,10 @@ def main():
 	for _ in range(5):
 		s = random.choice(test_pairs)[0]
 		print("ENG:", s)
-		print("ARY:", decode_sequence(transformer, ary_lookup, ary_index_lookup, s))
+		print("ARY:", decode_sequence(transformer, eng_lookup, ary_lookup, ary_index_lookup, s))
 		print()
 
-	sample_inference(transformer, ary_lookup, ary_index_lookup, test_pairs)
+	sample_inference(transformer, eng_lookup, ary_lookup, ary_index_lookup, test_pairs)
 
 	# Save training metadata (for paper)
 	experiment_metadata = {
