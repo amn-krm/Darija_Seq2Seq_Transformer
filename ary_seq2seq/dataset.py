@@ -12,7 +12,7 @@ app = typer.Typer()
 
 @app.command()
 def main():
-	logger.info("Downloading dataset for HF...")
+	logger.info("Downloading dataset from HF...")
 	# NOTE: requires `hf auth login`
 	ds = load_dataset("atlasia/Atlaset")
 
