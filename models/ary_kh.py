@@ -4,6 +4,7 @@ import os
 # NOTE: Switch to the torch backend, it appears to be slightly faster on AMD.
 os.environ["KERAS_BACKEND"] = "torch"
 
+from functools import partial
 import math
 import json
 import time

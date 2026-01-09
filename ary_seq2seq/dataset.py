@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
 
 from datasets import load_dataset
-
 from loguru import logger
 import typer
 
