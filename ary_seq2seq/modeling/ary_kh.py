@@ -15,7 +15,7 @@ import math
 from pathlib import Path
 import re
 import time
-from typing import Generator
+from typing import Iterator
 import unicodedata
 
 from datasets import Dataset, load_from_disk
@@ -141,7 +141,7 @@ def standardize(text: str) -> str:
 
 
 # Train SentencePiece tokenizers
-def train_spm(texts: Generator[str], prefix: str):
+def train_spm(texts: Iterator[str], prefix: str):
 	spm.SentencePieceTrainer.train(
 		sentence_iterator=texts,
 		model_prefix=prefix,
