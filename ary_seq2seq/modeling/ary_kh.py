@@ -34,10 +34,8 @@ keras.config.enable_flash_attention()  # noqa: E402
 from keras import ops
 import keras_hub
 from loguru import logger
-import numpy as np
 import sentencepiece as spm
 import tensorflow as tf
-import tensorflow.data as tf_data
 
 # import torch
 # Raise errors ASAP
@@ -218,8 +216,22 @@ class TranslationDataset(keras.utils.PyDataset):
 		start = idx * BATCH_SIZE
 		end = start + BATCH_SIZE
 
-		enc = np.array([encode_en(self.sp_en, t) for t in self.eng[start:end]], dtype="int32")
-		dec = np.array([encode_ary(self.sp_ary, t) for t in self.ary[start:end]], dtype="int32")
+		# Pad/trim `enc` to `SEQUENCE_LENGTH`
+		enc_start_end_packer = keras_hub.layers.StartEndPacker(
+			sequence_length=SEQUENCE_LENGTH,
+			pad_value=PAD_ID,
+		)
+
+		# Add special tokens (START & END) to `dec` and pad/trim it as well
+		dec_start_end_packer = keras_hub.layers.StartEndPacker(
+			sequence_length=SEQUENCE_LENGTH + 1,
+			start_value=self.sp_ary.piece_to_id(START_TOKEN),
+			end_value=self.sp_ary.piece_to_id(END_TOKEN),
+			pad_value=PAD_ID,
+		)
+
+		enc = ops.convert_to_tensor([enc_start_end_packer(self.sp_en.encode(t)) for t in self.eng[start:end]])
+		dec = ops.convert_to_tensor([dec_start_end_packer(self.sp_ary.encode(t)) for t in self.ary[start:end]])
 
 		return (
 			{
@@ -228,47 +240,6 @@ class TranslationDataset(keras.utils.PyDataset):
 			},
 			dec[:, 1:],
 		)
-
-
-# Pad & batch in a TF Dataset
-def make_dataset(pairs: SentPairList, sp_en: spm.SentencePieceProcessor, sp_ary: spm.SentencePieceProcessor):
-	def preprocess_batch(eng: tf.Tensor, ary: tf.Tensor):
-		# NOTE: spm encode returns a list of ints, make fancy on-device tensors out of those
-		eng = ops.convert_to_tensor(np.array(sp_en.encode(eng, out_type=int), dtype="int32"))
-		ary = ops.convert_to_tensor(np.array(sp_ary.encode(ary, out_type=int), dtype="int32"))
-
-		# Pad `eng` to `SEQUENCE_LENGTH`.
-		eng_start_end_packer = keras_hub.layers.StartEndPacker(
-			sequence_length=SEQUENCE_LENGTH,
-			pad_value=PAD_ID,
-		)
-		eng = eng_start_end_packer(eng)
-
-		# Add special tokens (START & END) to `ary` and pad it as well.
-		ary_start_end_packer = keras_hub.layers.StartEndPacker(
-			sequence_length=SEQUENCE_LENGTH + 1,
-			start_value=sp_ary.piece_to_id(START_TOKEN),
-			end_value=sp_ary.piece_to_id(END_TOKEN),
-			pad_value=PAD_ID,
-		)
-		ary = ary_start_end_packer(ary)
-
-		return (
-			{
-				"encoder_inputs": eng,
-				"decoder_inputs": ary[:, :-1],
-			},
-			ary[:, 1:],
-		)
-
-	eng_texts, ary_texts = zip(*pairs)
-	eng_texts = [standardize(t) for t in eng_texts]
-	ary_texts = [standardize(t) for t in ary_texts]
-	dataset = tf_data.Dataset.from_tensor_slices((eng_texts, ary_texts))
-	dataset = dataset.batch(BATCH_SIZE)
-	dataset = dataset.map(preprocess_batch, num_parallel_calls=tf_data.AUTOTUNE)
-
-	return dataset.shuffle(2048).prefetch(16).cache()
 
 
 # Build model
@@ -454,9 +425,9 @@ def main():
 	logger.info(f"ENG vocab size: <green>{eng_vocab_size}</green>")
 	logger.info(f"ARY vocab size: <green>{ary_vocab_size}</green>")
 
-	train_ds = make_dataset(train_pairs, sp_en, sp_ary)
-	val_ds = make_dataset(val_pairs, sp_en, sp_ary)
-	test_ds = make_dataset(test_pairs, sp_en, sp_ary)
+	train_ds = TranslationDataset(sp_en, sp_ary, train_pairs)
+	val_ds = TranslationDataset(sp_en, sp_ary, val_pairs)
+	test_ds = TranslationDataset(sp_en, sp_ary, test_pairs)
 
 	logger.info("Sanity-check the data splits:")
 	logger.info("train:")
