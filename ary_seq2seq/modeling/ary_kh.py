@@ -257,6 +257,7 @@ def build_model(ENG_VOCAB_SIZE: int, ARY_VOCAB_SIZE: int) -> keras.Model:
 		embedding_dim=EMBED_DIM,
 	)(decoder_inputs)
 
+	# NOTE: We get cross-attention by passing encoded_seq_inputs as encoder_sequence here
 	x = keras_hub.layers.TransformerDecoder(intermediate_dim=INTERMEDIATE_DIM, num_heads=NUM_HEADS)(
 		decoder_sequence=x, encoder_sequence=encoded_seq_inputs
 	)
