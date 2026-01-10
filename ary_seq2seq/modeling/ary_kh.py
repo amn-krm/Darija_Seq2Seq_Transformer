@@ -3,8 +3,9 @@
 import os
 import random
 
-# NOTE: Switch to the torch backend, it appears to be slightly faster on AMD (in some cases...).
-os.environ["KERAS_BACKEND"] = "torch"  # noqa: E402
+# NOTE: Switch to the torch backend,
+#       performance may be better on ROCm for some workflows...
+# os.environ["KERAS_BACKEND"] = "torch"  # noqa: E402
 # NOTE: And when we're *not* using the torch backend,
 #       don't let tensorflow alloc a giant block of VRAM on startup,
 #       because it makes for a *really* bad time when the driver decides
@@ -27,6 +28,7 @@ import unicodedata
 
 from datasets import Dataset, load_from_disk
 import keras
+
 # Flash Attention should no longer be experimental on my GPU in ROCm...
 keras.config.enable_flash_attention()  # noqa: E402
 from keras import ops
@@ -323,6 +325,47 @@ def decode_sequence(
 	return sp_ary.decode_pieces(pieces)
 
 
+def decode_sequences(
+	transformer: keras.Model,
+	sp_en: spm.SentencePieceProcessor,
+	sp_ary: spm.SentencePieceProcessor,
+	input_sentences: list[str],
+) -> list[str]:
+	batch_size = 1
+
+	# Tokenize the encoder input.
+	encoder_input_tokens = ops.convert_to_tensor(sp_en.encode(input_sentences), sparse=False, ragged=False)
+	if ops.shape(encoder_input_tokens)[1] < SEQUENCE_LENGTH:
+		pads = ops.zeros(
+			(1, SEQUENCE_LENGTH - ops.shape(encoder_input_tokens)[1]),
+			dtype=encoder_input_tokens.dtype,
+		)
+		encoder_input_tokens = ops.concatenate([encoder_input_tokens, pads], 1)
+
+	# Define a function that outputs the next token's probability given the
+	# input sequence.
+	def next(prompt, cache, index):
+		logits = transformer([encoder_input_tokens, prompt])[:, index - 1, :]
+		# Ignore hidden states for now; only needed for contrastive search.
+		hidden_states = None
+		return logits, hidden_states, cache
+
+	# Build a prompt of SEQUENCE_LENGTH with a start token and padding tokens.
+	length = SEQUENCE_LENGTH
+	start = ops.full((batch_size, 1), sp_ary.piece_to_id(START_TOKEN))
+	pad = ops.full((batch_size, length - 1), PAD_ID)
+	prompt = ops.concatenate((start, pad), axis=-1)
+
+	generated_tokens = keras_hub.samplers.GreedySampler()(
+		next,
+		prompt,
+		stop_token_ids=[sp_ary.piece_to_id(END_TOKEN)],
+		index=1,  # Start sampling after start token.
+	)
+	generated_sentences = sp_ary.decode(generated_tokens)
+	return generated_sentences
+
+
 def save_experiment(
 	transformer: keras.Model, sp_en: spm.SentencePieceProcessor, sp_ary: spm.SentencePieceProcessor, timestamp: str
 ) -> Path:
@@ -370,7 +413,7 @@ def sample_inference(
 	examples = []
 
 	for eng, ref in random.sample(test_pairs, NUM_EXAMPLES):
-		pred = decode_sequence(transformer, sp_en, sp_ary, eng)
+		pred = decode_sequences(transformer, sp_en, sp_ary, [eng])[0]
 		examples.append(
 			{
 				"english": eng,
@@ -424,7 +467,7 @@ def main():
 	for _ in range(5):
 		s = random.choice(test_pairs)[0]
 		print("ENG:", s)
-		print("ARY:", decode_sequence(transformer, sp_en, sp_ary, s))
+		print("ARY:", decode_sequences(transformer, sp_en, sp_ary, [s])[0])
 		print()
 
 	sample_inference(transformer, sp_en, sp_ary, test_pairs, exp_dir)
