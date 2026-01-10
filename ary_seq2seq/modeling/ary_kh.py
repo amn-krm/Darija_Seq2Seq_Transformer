@@ -142,13 +142,8 @@ def standardize(text: str) -> str:
 
 # Train SentencePiece tokenizers
 def train_spm(texts: list[str], prefix: str):
-	with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
-		for t in texts:
-			f.write(standardize(t) + "\n")
-		fname = f.name
-
 	spm.SentencePieceTrainer.train(
-		input=fname,
+		sentence_iterator=texts,
 		model_prefix=prefix,
 		vocab_size=VOCAB_SIZE,
 		model_type="bpe",
@@ -160,7 +155,6 @@ def train_spm(texts: list[str], prefix: str):
 		bos_id=-1,
 		eos_id=-1,
 	)
-	os.remove(fname)
 
 
 def train_tokenizers(train_pairs: SentPairList) -> None:
