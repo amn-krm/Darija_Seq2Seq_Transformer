@@ -50,6 +50,8 @@ BATCH_SIZE = 128
 EPOCHS = 10
 SEQUENCE_LENGTH = 50
 VOCAB_SIZE = 30_000
+START_TOKEN = "[start]"
+END_TOKEN = "[end]"
 PAD_ID = 0
 
 EMBED_DIM = 256
@@ -108,7 +110,7 @@ def clean_dataset(ds: Dataset) -> SentPairList:
 		if not (3 <= len(darija.split()) <= MAX_WORDS):
 			continue
 
-		pairs.append((en, f"[start] {darija} [end]"))
+		pairs.append((en, f"{START_TOKEN} {darija} {END_TOKEN}"))
 
 	logger.info(f"Total clean pairs: <green>{len(pairs)}</green>")
 
@@ -152,7 +154,7 @@ def train_spm(texts: list[str], prefix: str):
 		model_type="bpe",
 		character_coverage=0.9995,
 		byte_fallback=True,
-		user_defined_symbols=["[start]", "[end]"],
+		user_defined_symbols=[START_TOKEN, END_TOKEN],
 		pad_id=0,
 		unk_id=1,
 		bos_id=-1,
@@ -289,8 +291,8 @@ def decode_sequence(
 	sp_ary: spm.SentencePieceProcessor,
 	sentence: str,
 ) -> str:
-	START_ID = sp_ary.piece_to_id("[start]")
-	END_ID = sp_ary.piece_to_id("[end]")
+	START_ID = sp_ary.piece_to_id(START_TOKEN)
+	END_ID = sp_ary.piece_to_id(END_TOKEN)
 
 	enc = np.array([encode_en(sp_en, sentence)], dtype="int32")
 	decoded = [START_ID]
@@ -314,7 +316,7 @@ def decode_sequence(
 			break
 
 	pieces = [sp_ary.id_to_piece(i) for i in decoded]
-	pieces = [p for p in pieces if p not in ("[start]", "[end]")]
+	pieces = [p for p in pieces if p not in (START_TOKEN, END_TOKEN)]
 	return sp_ary.decode_pieces(pieces)
 
 
