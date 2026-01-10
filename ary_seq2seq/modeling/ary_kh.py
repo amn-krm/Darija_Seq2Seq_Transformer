@@ -36,13 +36,14 @@ import keras_hub
 from loguru import logger
 import numpy as np
 import sentencepiece as spm
-import torch
+import tensorflow as tf
+
+# import torch
+# Raise errors ASAP
+# torch.autograd.set_detect_anomaly(True)  # noqa: E402
 import typer
 
 from ary_seq2seq.config import ATLASET_DATASET, REPORTS_DIR
-
-# Raise errors ASAP
-torch.autograd.set_detect_anomaly(True)
 
 type SentPair = tuple[str, str]
 type SentPairList = list[SentPair]
@@ -77,7 +78,7 @@ REF_RE = re.compile(r"\[\d+\]")
 BIDI_RE = re.compile(r"[\u200e\u200f\u202a-\u202e\u2066-\u2069\u061c]")
 
 
-def clean_text(text):
+def clean_text(text: str) -> str:
 	if not text:
 		return ""
 
@@ -188,16 +189,16 @@ def load_tokenizers() -> tuple[spm.SentencePieceProcessor, spm.SentencePieceProc
 
 
 # Vectorization utilities
-def pad_or_truncate(seq, max_len: int):
+def pad_or_truncate(seq: list[int], max_len: int) -> list[int]:
 	seq = seq[:max_len]
 	return seq + [PAD_ID] * (max_len - len(seq))
 
 
-def encode_en(sp_en: spm.SentencePieceProcessor, text: str):
+def encode_en(sp_en: spm.SentencePieceProcessor, text: str) -> list[int]:
 	return pad_or_truncate(sp_en.encode(standardize(text), out_type=int), SEQUENCE_LENGTH)
 
 
-def encode_ary(sp_ary: spm.SentencePieceProcessor, text: str):
+def encode_ary(sp_ary: spm.SentencePieceProcessor, text: str) -> list[int]:
 	return pad_or_truncate(sp_ary.encode(standardize(text), out_type=int), SEQUENCE_LENGTH + 1)
 
 
@@ -333,8 +334,8 @@ def decode_sequences(
 ) -> list[str]:
 	batch_size = 1
 
-	# Tokenize the encoder input.
-	encoder_input_tokens = ops.convert_to_tensor(sp_en.encode(input_sentences), sparse=False, ragged=False)
+	# Tokenize the encoder input
+	encoder_input_tokens = ops.convert_to_tensor(sp_en.encode(input_sentences, out_type=int), sparse=False, ragged=False)
 	if ops.shape(encoder_input_tokens)[1] < SEQUENCE_LENGTH:
 		pads = ops.zeros(
 			(1, SEQUENCE_LENGTH - ops.shape(encoder_input_tokens)[1]),
@@ -342,15 +343,14 @@ def decode_sequences(
 		)
 		encoder_input_tokens = ops.concatenate([encoder_input_tokens, pads], 1)
 
-	# Define a function that outputs the next token's probability given the
-	# input sequence.
-	def next(prompt, cache, index):
+	# Define a function that outputs the next token's probability given the input sequence
+	def next(prompt: tf.Tensor, cache, index: int):
 		logits = transformer([encoder_input_tokens, prompt])[:, index - 1, :]
-		# Ignore hidden states for now; only needed for contrastive search.
+		# Ignore hidden states for now; only needed for contrastive search
 		hidden_states = None
 		return logits, hidden_states, cache
 
-	# Build a prompt of SEQUENCE_LENGTH with a start token and padding tokens.
+	# Build a prompt of SEQUENCE_LENGTH with a start token and padding tokens
 	length = SEQUENCE_LENGTH
 	start = ops.full((batch_size, 1), sp_ary.piece_to_id(START_TOKEN))
 	pad = ops.full((batch_size, length - 1), PAD_ID)
@@ -360,10 +360,15 @@ def decode_sequences(
 		next,
 		prompt,
 		stop_token_ids=[sp_ary.piece_to_id(END_TOKEN)],
-		index=1,  # Start sampling after start token.
+		index=1,  # Start sampling after start token
 	)
-	generated_sentences = sp_ary.decode(generated_tokens)
-	return generated_sentences
+	# NOTE: spm doesn't deal with ndarrays all that well, cast to a list of Python ints...
+	generated_sentences = sp_ary.decode(tf.squeeze(generated_tokens, 0).numpy().astype(int).tolist())
+	# NOTE: spm automatically unwraps single-sentence outputs...
+	if isinstance(generated_sentences, str):
+		return [generated_sentences]
+	else:
+		return generated_sentences
 
 
 def save_experiment(
