@@ -5,6 +5,11 @@ import random
 
 # NOTE: Switch to the torch backend, it appears to be slightly faster on AMD.
 os.environ["KERAS_BACKEND"] = "torch"  # noqa: E402
+# NOTE: And when we're *not* using the torch backend,
+#       don't let tensorflow/xla alloc a giant block of VRAM on startup,
+#       because it makes for a *really* bad time when the driver decides
+#       to relocate it to GTT to accomodate another smaller alloc...
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 random.seed(42)  # noqa: E402
 
 import ast
@@ -43,7 +48,7 @@ logger.opt = partial(logger.opt, colors=True)
 app = typer.Typer()
 
 # -------- experiment directory --------
-EXP_NAME = "darija_en_transformer_spm"
+EXP_NAME = "darija_en_transformer_spm_kh"
 
 # parms/hparms
 BATCH_SIZE = 128
