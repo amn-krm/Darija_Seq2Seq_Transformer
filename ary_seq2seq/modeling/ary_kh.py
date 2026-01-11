@@ -8,6 +8,8 @@ import random
 #       Here, in practice, it appears to be faster for epoch 1,
 #       but slower after that (and GPU/power utilization is not maximized),
 #       so we end up using the tf backend.
+#       (Tested inside AMD's tf 2.19 w/ rocm 7.1.1 docker container,
+#       ... and an official pre-release torch wheel for rocm 7.1).
 # os.environ["KERAS_BACKEND"] = "torch"  # noqa: E402
 # NOTE: And when we're *not* using the torch backend,
 #       don't let tensorflow alloc a giant block of VRAM on startup,
