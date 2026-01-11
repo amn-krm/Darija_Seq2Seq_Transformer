@@ -21,6 +21,7 @@ os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"  # noqa: E402
 random.seed(42)  # noqa: E402
 
 import ast
+import contextlib
 from functools import partial
 import html
 import json
@@ -179,21 +180,22 @@ def train_spm(texts: Iterator[str], prefix: str):
 	)
 
 
-def train_tokenizers(train_pairs: SentPairList) -> None:
-	logger.info("Training EN tokenizer...")
-	train_spm((p[0] for p in train_pairs), "spm_en")
+def train_tokenizers(exp_dir: Path, train_pairs: SentPairList) -> None:
+	with contextlib.chdir(exp_dir):
+		logger.info("Training EN tokenizer...")
+		train_spm((p[0] for p in train_pairs), "spm_en")
 
-	logger.info("Training ARY tokenizer...")
-	train_spm((p[1] for p in train_pairs), "spm_ary")
+		logger.info("Training ARY tokenizer...")
+		train_spm((p[1] for p in train_pairs), "spm_ary")
 
 
 # Load SentencePiece models
-def load_tokenizers() -> tuple[spm.SentencePieceProcessor, spm.SentencePieceProcessor]:
+def load_tokenizers(exp_dir: Path) -> tuple[spm.SentencePieceProcessor, spm.SentencePieceProcessor]:
 	sp_en = spm.SentencePieceProcessor()
-	sp_en.load("spm_en.model")
+	sp_en.load((exp_dir / "spm_en.model").as_posix())
 
 	sp_ary = spm.SentencePieceProcessor()
-	sp_ary.load("spm_ary.model")
+	sp_ary.load((exp_dir / "spm_ary.model").as_posix())
 
 	return sp_en, sp_ary
 
@@ -486,8 +488,13 @@ def main(with_swiglu: Annotated[bool, typer.Option(help="Use a Decoder w/ RMSNor
 	pairs = clean_dataset(ds)
 	train_pairs, val_pairs, test_pairs = split_dataset(pairs)
 
-	train_tokenizers(train_pairs)
-	sp_en, sp_ary = load_tokenizers()
+	timestamp = time.strftime("%Y%m%d_%H%M%S")
+	exp_dir = REPORTS_DIR / f"{EXP_NAME}_{timestamp}"
+	exp_dir.mkdir(parents=True, exist_ok=True)
+	logger.info(f"Saving experiment run to <magenta>{exp_dir}</magenta>")
+
+	train_tokenizers(exp_dir, train_pairs)
+	sp_en, sp_ary = load_tokenizers(exp_dir)
 
 	eng_vocab_size = sp_en.get_piece_size()
 	ary_vocab_size = sp_ary.get_piece_size()
@@ -506,11 +513,6 @@ def main(with_swiglu: Annotated[bool, typer.Option(help="Use a Decoder w/ RMSNor
 	print(val_ds[0])
 	logger.info("test:")
 	print(test_ds[0])
-
-	timestamp = time.strftime("%Y%m%d_%H%M%S")
-	exp_dir = REPORTS_DIR / f"{EXP_NAME}_{timestamp}"
-	exp_dir.mkdir(parents=True, exist_ok=True)
-	logger.info(f"Saving experiment run to <magenta>{exp_dir}</magenta>")
 
 	transformer = build_model(eng_vocab_size, ary_vocab_size)
 	transformer, history = train_model(exp_dir, timestamp, transformer, train_ds, val_ds)
