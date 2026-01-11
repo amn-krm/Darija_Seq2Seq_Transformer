@@ -64,7 +64,7 @@ EXP_NAME = "darija_en_transformer_spm_kh"
 
 # parms/hparms
 BATCH_SIZE = 128
-EPOCHS = 10
+EPOCHS = 20
 SEQUENCE_LENGTH = 50
 VOCAB_SIZE = 30_000
 START_TOKEN = "[start]"
@@ -110,7 +110,7 @@ def clean_dataset(ds: Dataset) -> SentPairList:
 	logger.info("Cleaning dataset...")
 	pairs = []
 
-	MAX_ROWS = 20_000  # FIXME: 500_000
+	MAX_ROWS = 500_000
 	MAX_WORDS = 50
 
 	for ex in ds["train"].select(range(MAX_ROWS)):
