@@ -362,11 +362,12 @@ class TrainContext:
 		return test_loss, test_acc
 
 	# Qualitative inference examples
-	def sample_inference(self, test_pairs: SentPairList) -> None:
-		NUM_EXAMPLES = 20
+	def sample_inference(
+		self, test_pairs: SentPairList, num_examples: int = 20, filename: str = "inference_examples.json"
+	) -> None:
 		examples = []
 
-		for eng, ref in random.sample(test_pairs, NUM_EXAMPLES):
+		for eng, ref in random.sample(test_pairs, num_examples):
 			pred = self.decode_sequences([eng])[0]
 			examples.append(
 				{
@@ -377,7 +378,7 @@ class TrainContext:
 			)
 
 		# Save examples
-		with (self.exp_dir / "inference_examples.json").open("w", encoding="utf-8") as f:
+		with (self.exp_dir / filename).open("w", encoding="utf-8") as f:
 			json.dump(examples, f, ensure_ascii=False, indent=2)
 
 
