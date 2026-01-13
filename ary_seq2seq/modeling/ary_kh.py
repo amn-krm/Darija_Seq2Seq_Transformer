@@ -486,7 +486,7 @@ def main(with_swiglu: Annotated[bool, typer.Option(help="Use a Decoder w/ RMSNor
 	ctx = TrainContext(with_swiglu)
 
 	ctx.load_dataset()
-	ctx.lean_dataset()
+	ctx.clean_dataset()
 	ctx.split_dataset()
 
 	ctx.train_tokenizers()
