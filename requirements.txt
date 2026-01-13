@@ -8,6 +8,7 @@ pip
 python-dotenv
 rich
 ruff
+sacrebleu
 sentencepiece
 textual
 tqdm
