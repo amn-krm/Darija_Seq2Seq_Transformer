@@ -52,7 +52,7 @@ import tensorflow as tf
 import typer
 from typing_extensions import Annotated
 
-from ary_seq2seq.config import ATLASET_DATASET, REPORTS_DIR
+from ary_seq2seq.config import ATLASET_DATASET, MODELS_DIR
 from ary_seq2seq.modeling.layers import TransformerDecoderSwiGLU
 
 type SentPair = tuple[str, str]
@@ -136,7 +136,7 @@ class TrainContext:
 		self.with_swiglu = with_swiglu
 
 		self.timestamp = time.strftime("%Y%m%d_%H%M%S")
-		self.exp_dir = REPORTS_DIR / f"{self.exp_name}_{self.timestamp}"
+		self.exp_dir = MODELS_DIR / f"{self.exp_name}_{self.timestamp}"
 		self.exp_dir.mkdir(parents=True, exist_ok=True)
 		logger.info(f"Saving experiment run to <magenta>{self.exp_dir}</magenta>")
 
