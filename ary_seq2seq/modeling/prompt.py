@@ -15,7 +15,7 @@ from ary_seq2seq.modeling.ary_kh import END_TOKEN, START_TOKEN, TrainContext
 # Simply subclass our TrainContext to keep it DRY
 class InferenceContext(TrainContext):
 	def __init__(self) -> None:
-		# Just fudge the exp_dir to get everything to look int he right place
+		# Just fudge the exp_dir to get everything to look in the right place
 		self.exp_dir = PRETRAINED_MODEL
 		model_file = self.exp_dir / "ary.keras"
 
