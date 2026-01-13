@@ -74,7 +74,7 @@ class EnAry(App):
 	def translate(self, event: Input.Submitted) -> None:
 		answer = self.query_one("#answer")
 		translation = self.ary_ctx.translate(event.value)
-		answer.update(f"{event.value}: {translation}")
+		answer.update(f"{event.value} -> {translation}")
 
 		prompt = self.query_one("#prompt")
 		prompt.clear()
