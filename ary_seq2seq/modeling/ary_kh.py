@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# Allow forward declarations of classes (in older Python versions)
+from __future__ import annotations
+
 import os
 import random
 
@@ -26,13 +29,12 @@ from functools import partial
 import html
 import json
 import math
-from pathlib import Path
 import re
 import time
 from typing import Iterator
 import unicodedata
 
-from datasets import Dataset, load_from_disk
+from datasets import load_from_disk
 import keras
 
 # Flash Attention should no longer be experimental on my GPU in ROCm...
@@ -61,9 +63,6 @@ logger = logger.opt(colors=True)
 logger.opt = partial(logger.opt, colors=True)
 
 app = typer.Typer()
-
-# -------- experiment directory --------
-EXP_NAME = "darija_en_transformer_spm_kh"
 
 # parms/hparms
 BATCH_SIZE = 128
@@ -103,61 +102,6 @@ def clean_text(text: str) -> str:
 	return text.strip()
 
 
-# -------- load dataset --------
-def load_dataset() -> Dataset:
-	logger.info("Loading dataset from disk...")
-	return load_from_disk(ATLASET_DATASET)
-
-
-def clean_dataset(ds: Dataset) -> SentPairList:
-	logger.info("Cleaning dataset...")
-	pairs = []
-
-	MAX_ROWS = 500_000
-	MAX_WORDS = 50
-
-	for ex in ds["train"].select(range(MAX_ROWS)):
-		try:
-			meta = ast.literal_eval(ex["metadata"])
-		except Exception as e:
-			logger.warning(e)
-			continue
-
-		en = clean_text(meta.get("english", ""))
-		darija = clean_text(ex["text"])
-
-		if not en or not darija:
-			continue
-		if not (3 <= len(en.split()) <= MAX_WORDS):
-			continue
-		if not (3 <= len(darija.split()) <= MAX_WORDS):
-			continue
-
-		pairs.append((en, darija))
-
-	logger.info(f"Total clean pairs: <green>{len(pairs)}</green>")
-
-	return pairs
-
-
-def split_dataset(pairs: SentPairList) -> tuple[SentPairList, SentPairList, SentPairList]:
-	logger.info("Splitting dataset...")
-	random.shuffle(pairs)
-
-	num_val = int(0.15 * len(pairs))
-	num_train = len(pairs) - 2 * num_val
-
-	train_pairs = pairs[:num_train]
-	val_pairs = pairs[num_train : num_train + num_val]
-	test_pairs = pairs[num_train + num_val :]
-
-	logger.info(
-		f"<green>{len(train_pairs)}</green> train / <green>{len(val_pairs)}</green> val / <green>{len(test_pairs)}</green> test"
-	)
-
-	return train_pairs, val_pairs, test_pairs
-
-
 # Text standardization
 def standardize(text: str) -> str:
 	return text.lower().strip()
@@ -180,24 +124,261 @@ def train_spm(texts: Iterator[str], prefix: str):
 	)
 
 
-def train_tokenizers(exp_dir: Path, train_pairs: SentPairList) -> None:
-	with contextlib.chdir(exp_dir):
-		logger.info("Training EN tokenizer...")
-		train_spm((p[0] for p in train_pairs), "spm_en")
+class TrainContext:
+	"""
+	Wrap most of our stuff in a container class to be able to keep things modular while also keeping function signatures sane
+	"""
 
-		logger.info("Training ARY tokenizer...")
-		train_spm((p[1] for p in train_pairs), "spm_ary")
+	def __init__(self, with_swiglu: bool) -> None:
+		self.exp_name = "darija_en_transformer_spm_kh"
+		if with_swiglu:
+			self.exp_name += "_swiglu"
+		self.with_swiglu = with_swiglu
 
+		self.timestamp = time.strftime("%Y%m%d_%H%M%S")
+		self.exp_dir = REPORTS_DIR / f"{self.exp_name}_{self.timestamp}"
+		self.exp_dir.mkdir(parents=True, exist_ok=True)
+		logger.info(f"Saving experiment run to <magenta>{self.exp_dir}</magenta>")
 
-# Load SentencePiece models
-def load_tokenizers(exp_dir: Path) -> tuple[spm.SentencePieceProcessor, spm.SentencePieceProcessor]:
-	sp_en = spm.SentencePieceProcessor()
-	sp_en.load((exp_dir / "spm_en.model").as_posix())
+	def load_dataset(self) -> None:
+		logger.info("Loading dataset from disk...")
+		self.dataset = load_from_disk(ATLASET_DATASET)
 
-	sp_ary = spm.SentencePieceProcessor()
-	sp_ary.load((exp_dir / "spm_ary.model").as_posix())
+	def clean_dataset(self) -> None:
+		logger.info("Cleaning dataset...")
+		pairs: SentPairList = []
 
-	return sp_en, sp_ary
+		MAX_ROWS = 500_000
+		MAX_WORDS = 50
+
+		for ex in self.dataset["train"].select(range(MAX_ROWS)):
+			try:
+				meta = ast.literal_eval(ex["metadata"])
+			except Exception as e:
+				logger.warning(e)
+				continue
+
+			en = clean_text(meta.get("english", ""))
+			darija = clean_text(ex["text"])
+
+			if not en or not darija:
+				continue
+			if not (3 <= len(en.split()) <= MAX_WORDS):
+				continue
+			if not (3 <= len(darija.split()) <= MAX_WORDS):
+				continue
+
+			pairs.append((en, darija))
+
+		logger.info(f"Total clean pairs: <green>{len(pairs)}</green>")
+		self.pairs = pairs
+
+	def split_dataset(self) -> None:
+		logger.info("Splitting dataset...")
+		random.shuffle(self.pairs)
+
+		num_val = int(0.15 * len(self.pairs))
+		num_train = len(self.pairs) - 2 * num_val
+
+		self.train_pairs = self.pairs[:num_train]
+		self.val_pairs = self.pairs[num_train : num_train + num_val]
+		self.test_pairs = self.pairs[num_train + num_val :]
+
+		logger.info(
+			f"<green>{len(self.train_pairs)}</green> train / <green>{len(self.val_pairs)}</green> val / <green>{len(self.test_pairs)}</green> test"
+		)
+
+	def train_tokenizers(self) -> None:
+		with contextlib.chdir(self.exp_dir):
+			logger.info("Training EN tokenizer...")
+			train_spm((p[0] for p in self.train_pairs), "spm_en")
+
+			logger.info("Training ARY tokenizer...")
+			train_spm((p[1] for p in self.train_pairs), "spm_ary")
+
+	# Load SentencePiece models
+	def load_trained_tokenizers(self) -> None:
+		self.sp_en = spm.SentencePieceProcessor()
+		self.sp_en.load((self.exp_dir / "spm_en.model").as_posix())
+
+		self.sp_ary = spm.SentencePieceProcessor()
+		self.sp_ary.load((self.exp_dir / "spm_ary.model").as_posix())
+
+		self.eng_vocab_size = self.sp_en.get_piece_size()
+		self.ary_vocab_size = self.sp_ary.get_piece_size()
+
+		logger.info(f"ENG vocab size: <green>{self.eng_vocab_size}</green>")
+		logger.info(f"ARY vocab size: <green>{self.ary_vocab_size}</green>")
+
+	def batch_dataset(self) -> None:
+		self.train_ds = TranslationDataset(self.sp_en, self.sp_ary, self.train_pairs)
+		self.val_ds = TranslationDataset(self.sp_en, self.sp_ary, self.val_pairs)
+		self.test_ds = TranslationDataset(self.sp_en, self.sp_ary, self.test_pairs)
+
+	def build_model(self) -> None:
+		self.transformer = build_model(self.eng_vocab_size, self.ary_vocab_size, self.with_swiglu)
+
+	def train_model(self) -> None:
+		logger.info("Training the model...")
+		self.transformer.summary()
+
+		# Setup our callbacks
+		earlystop = keras.callbacks.EarlyStopping(
+			monitor="val_loss",
+			min_delta=0,
+			patience=5,
+			verbose=1,
+			mode="min",
+			baseline=None,
+			restore_best_weights=True,
+			start_from_epoch=8,  # We generally converge around epoch 15
+		)
+
+		tensorboard = keras.callbacks.TensorBoard(
+			log_dir=(self.exp_dir / "logs").as_posix(),
+			histogram_freq=1,
+			write_graph=True,
+			write_images=False,
+			write_steps_per_second=False,
+			update_freq="epoch",
+			profile_batch=0,
+			embeddings_freq=1,
+			embeddings_metadata=None,
+		)
+
+		# In case we ever need to interrupt training...
+		checkpoint = keras.callbacks.ModelCheckpoint(
+			filepath=(self.exp_dir / "checkpoints" / f"ary-{self.timestamp}.keras").as_posix(),
+			monitor="val_loss",
+			mode="min",
+			save_best_only=True,
+			save_freq="epoch",
+			verbose=1,
+		)
+
+		self.transformer.compile(optimizer="rmsprop", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+
+		self.history = self.transformer.fit(
+			self.train_ds,
+			epochs=EPOCHS,
+			validation_data=self.val_ds,
+			callbacks=[earlystop, tensorboard, checkpoint],
+			verbose=1,
+		)
+
+	def save_experiment(self) -> None:
+		logger.info("Saving model...")
+
+		# Save model
+		model_path = self.exp_dir / "ary.keras"
+		self.transformer.save(model_path)
+
+		# Save vocabularies
+		en_vocab = [self.sp_en.id_to_piece(i) for i in range(self.sp_en.get_piece_size())]
+		(self.exp_dir / "eng_vocab.txt").write_text("\n".join(en_vocab), encoding="utf-8")
+
+		ary_vocab = [self.sp_ary.id_to_piece(i) for i in range(self.sp_ary.get_piece_size())]
+		(self.exp_dir / "ary_vocab.txt").write_text("\n".join(ary_vocab), encoding="utf-8")
+
+		# Dump the history, too
+		with (self.exp_dir / "history.json").open("w", encoding="utf-8") as f:
+			json.dump(self.history, f, ensure_ascii=False, indent=2)
+
+	def plot_training(self) -> None:
+		fig, ax = plt.subplots()
+		ax.plot(self.history.history["loss"], label="Train loss")
+		ax.plot(self.history.history["val_loss"], label="Val loss")
+		ax.set_title("Loss")
+		ax.set_xlabel("Epoch")
+		ax.set_ylabel("Loss value")
+		ax.legend()
+
+		plt.savefig((self.exp_dir / "losses.png").as_posix())
+		plt.clf()
+
+		fig, ax = plt.subplots()
+		ax.plot(self.history.history["accuracy"], label="Train accuracy")
+		ax.plot(self.history.history["val_accuracy"], label="Val accuracy")
+		ax.set_title("Accuracy")
+		ax.set_xlabel("Epoch")
+		ax.set_ylabel("Accuracy value")
+		ax.legend()
+
+		plt.savefig((self.exp_dir / "accuracy.png").as_posix())
+		plt.clf()
+
+	# Inference
+	def decode_sequences(self, input_sentences: list[str]) -> list[str]:
+		batch_size = 1
+
+		# Tokenize the encoder input
+		encoder_input_tokens = ops.convert_to_tensor(
+			self.sp_en.encode(input_sentences, out_type=int), sparse=False, ragged=False
+		)
+		if ops.shape(encoder_input_tokens)[1] < SEQUENCE_LENGTH:
+			pads = ops.zeros(
+				(1, SEQUENCE_LENGTH - ops.shape(encoder_input_tokens)[1]),
+				dtype=encoder_input_tokens.dtype,
+			)
+			encoder_input_tokens = ops.concatenate([encoder_input_tokens, pads], 1)
+		elif ops.shape(encoder_input_tokens)[1] > SEQUENCE_LENGTH:
+			encoder_input_tokens = encoder_input_tokens[..., :SEQUENCE_LENGTH]
+
+		# Define a function that outputs the next token's probability given the input sequence
+		def next(prompt: tf.Tensor, cache, index: int):
+			logits = self.transformer([encoder_input_tokens, prompt])[:, index - 1, :]
+			# Ignore hidden states for now; only needed for contrastive search
+			hidden_states = None
+			return logits, hidden_states, cache
+
+		# Build a prompt of SEQUENCE_LENGTH with a start token and padding tokens
+		length = SEQUENCE_LENGTH
+		start = ops.full((batch_size, 1), self.sp_ary.piece_to_id(START_TOKEN))
+		pad = ops.full((batch_size, length - 1), PAD_ID)
+		prompt = ops.concatenate((start, pad), axis=-1)
+
+		generated_tokens = keras_hub.samplers.GreedySampler()(
+			next,
+			prompt,
+			stop_token_ids=[self.sp_ary.piece_to_id(END_TOKEN)],
+			index=1,  # Start sampling after start token
+		)
+		# NOTE: spm doesn't deal with ndarrays all that well, cast to a list of Python ints...
+		generated_sentences = self.sp_ary.decode(tf.squeeze(generated_tokens, 0).numpy().astype(int).tolist())
+		# NOTE: spm automatically unwraps single-sentence outputs...
+		if isinstance(generated_sentences, str):
+			return [generated_sentences]
+		else:
+			return generated_sentences
+
+	# Evaluate on test set
+	def eval_on_test(self) -> tuple[float, float]:
+		logger.info("Evaluating model on the test set...")
+
+		test_loss, test_acc = self.transformer.evaluate(self.test_ds, verbose=0)
+
+		logger.info(f"Test loss: <blue>{test_loss:.4f}</blue>")
+		logger.info(f"Test accuracy: <blue>{test_acc:.4f}</blue>")
+		return test_loss, test_acc
+
+	# Qualitative inference examples
+	def sample_inference(self, test_pairs: SentPairList) -> None:
+		NUM_EXAMPLES = 20
+		examples = []
+
+		for eng, ref in random.sample(test_pairs, NUM_EXAMPLES):
+			pred = self.decode_sequences([eng])[0]
+			examples.append(
+				{
+					"english": eng,
+					"reference_darija": ref,
+					"predicted_darija": pred,
+				}
+			)
+
+		# Save examples
+		with (self.exp_dir / "inference_examples.json").open("w", encoding="utf-8") as f:
+			json.dump(examples, f, ensure_ascii=False, indent=2)
 
 
 # Torch-compatible Dataset (because tf.Dataset is pain.)
@@ -243,14 +424,14 @@ class TranslationDataset(keras.utils.PyDataset):
 
 
 # Build model
-def build_model(ENG_VOCAB_SIZE: int, ARY_VOCAB_SIZE: int) -> keras.Model:
+def build_model(eng_vocab_size: int, ary_vocab_size: int, with_swiglu: bool) -> keras.Model:
 	logger.info("Building the model...")
 
 	# Encoder
 	encoder_inputs = keras.Input(shape=(None,), name="encoder_inputs")
 
 	x = keras_hub.layers.TokenAndPositionEmbedding(
-		vocabulary_size=ENG_VOCAB_SIZE,
+		vocabulary_size=eng_vocab_size,
 		sequence_length=SEQUENCE_LENGTH,
 		embedding_dim=EMBED_DIM,
 	)(encoder_inputs)
@@ -265,13 +446,12 @@ def build_model(ENG_VOCAB_SIZE: int, ARY_VOCAB_SIZE: int) -> keras.Model:
 	encoded_seq_inputs = keras.Input(shape=(None, EMBED_DIM), name="decoder_state_inputs")
 
 	x = keras_hub.layers.TokenAndPositionEmbedding(
-		vocabulary_size=ARY_VOCAB_SIZE,
+		vocabulary_size=ary_vocab_size,
 		sequence_length=SEQUENCE_LENGTH,
 		embedding_dim=EMBED_DIM,
 	)(decoder_inputs)
 
-	# Cheap-ass way of handling our --with-swiglu flag w/o touching the function signature :D
-	if EXP_NAME.endswith("_swiglu"):
+	if with_swiglu:
 		logger.info("Using custom <blue>TransformerDecoderSwiGLU</blue> layer!")
 		x = TransformerDecoderSwiGLU(intermediate_dim=FEED_FORWARD_DIM, num_heads=NUM_HEADS)(
 			decoder_sequence=x, encoder_sequence=encoded_seq_inputs
@@ -282,7 +462,7 @@ def build_model(ENG_VOCAB_SIZE: int, ARY_VOCAB_SIZE: int) -> keras.Model:
 			decoder_sequence=x, encoder_sequence=encoded_seq_inputs
 		)
 	x = keras.layers.Dropout(0.5)(x)
-	decoder_outputs = keras.layers.Dense(ARY_VOCAB_SIZE, activation="softmax")(x)
+	decoder_outputs = keras.layers.Dense(ary_vocab_size, activation="softmax")(x)
 	decoder = keras.Model(
 		[
 			decoder_inputs,
@@ -301,246 +481,54 @@ def build_model(ENG_VOCAB_SIZE: int, ARY_VOCAB_SIZE: int) -> keras.Model:
 	return transformer
 
 
-def train_model(
-	exp_dir: Path, timestamp: str, transformer: keras.Model, train_ds: TranslationDataset, val_ds: TranslationDataset
-) -> tuple[keras.Model, keras.callbacks.History]:
-	logger.info("Training the model...")
-	transformer.summary()
-
-	# Setup our callbacks
-	earlystop = keras.callbacks.EarlyStopping(
-		monitor="val_loss",
-		min_delta=0,
-		patience=5,
-		verbose=1,
-		mode="min",
-		baseline=None,
-		restore_best_weights=True,
-		start_from_epoch=8,  # We generally converge around epoch 15
-	)
-
-	tensorboard = keras.callbacks.TensorBoard(
-		log_dir=(exp_dir / "logs").as_posix(),
-		histogram_freq=1,
-		write_graph=True,
-		write_images=False,
-		write_steps_per_second=False,
-		update_freq="epoch",
-		profile_batch=0,
-		embeddings_freq=1,
-		embeddings_metadata=None,
-	)
-
-	# In case we ever need to interrupt training...
-	checkpoint = keras.callbacks.ModelCheckpoint(
-		filepath=(exp_dir / "checkpoints" / f"ary-{timestamp}.keras").as_posix(),
-		monitor="val_loss",
-		mode="min",
-		save_best_only=True,
-		save_freq="epoch",
-		verbose=1,
-	)
-
-	transformer.compile(optimizer="rmsprop", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
-
-	history = transformer.fit(
-		train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=[earlystop, tensorboard, checkpoint], verbose=1
-	)
-
-	return transformer, history
-
-
-def plot_training(exp_dir: Path, history: keras.callbacks.History) -> None:
-	fig, ax = plt.subplots()
-	ax.plot(history.history["loss"], label="Train loss")
-	ax.plot(history.history["val_loss"], label="Val loss")
-	ax.set_title("Loss")
-	ax.set_xlabel("Epoch")
-	ax.set_ylabel("Loss value")
-	ax.legend()
-
-	plt.savefig((exp_dir / "losses.png").as_posix())
-	plt.clf()
-
-	fig, ax = plt.subplots()
-	ax.plot(history.history["accuracy"], label="Train accuracy")
-	ax.plot(history.history["val_accuracy"], label="Val accuracy")
-	ax.set_title("Accuracy")
-	ax.set_xlabel("Epoch")
-	ax.set_ylabel("Accuracy value")
-	ax.legend()
-
-	plt.savefig((exp_dir / "accuracy.png").as_posix())
-	plt.clf()
-
-
-# Inference
-def decode_sequences(
-	transformer: keras.Model,
-	sp_en: spm.SentencePieceProcessor,
-	sp_ary: spm.SentencePieceProcessor,
-	input_sentences: list[str],
-) -> list[str]:
-	batch_size = 1
-
-	# Tokenize the encoder input
-	encoder_input_tokens = ops.convert_to_tensor(sp_en.encode(input_sentences, out_type=int), sparse=False, ragged=False)
-	if ops.shape(encoder_input_tokens)[1] < SEQUENCE_LENGTH:
-		pads = ops.zeros(
-			(1, SEQUENCE_LENGTH - ops.shape(encoder_input_tokens)[1]),
-			dtype=encoder_input_tokens.dtype,
-		)
-		encoder_input_tokens = ops.concatenate([encoder_input_tokens, pads], 1)
-	elif ops.shape(encoder_input_tokens)[1] > SEQUENCE_LENGTH:
-		encoder_input_tokens = encoder_input_tokens[..., :SEQUENCE_LENGTH]
-
-	# Define a function that outputs the next token's probability given the input sequence
-	def next(prompt: tf.Tensor, cache, index: int):
-		logits = transformer([encoder_input_tokens, prompt])[:, index - 1, :]
-		# Ignore hidden states for now; only needed for contrastive search
-		hidden_states = None
-		return logits, hidden_states, cache
-
-	# Build a prompt of SEQUENCE_LENGTH with a start token and padding tokens
-	length = SEQUENCE_LENGTH
-	start = ops.full((batch_size, 1), sp_ary.piece_to_id(START_TOKEN))
-	pad = ops.full((batch_size, length - 1), PAD_ID)
-	prompt = ops.concatenate((start, pad), axis=-1)
-
-	generated_tokens = keras_hub.samplers.GreedySampler()(
-		next,
-		prompt,
-		stop_token_ids=[sp_ary.piece_to_id(END_TOKEN)],
-		index=1,  # Start sampling after start token
-	)
-	# NOTE: spm doesn't deal with ndarrays all that well, cast to a list of Python ints...
-	generated_sentences = sp_ary.decode(tf.squeeze(generated_tokens, 0).numpy().astype(int).tolist())
-	# NOTE: spm automatically unwraps single-sentence outputs...
-	if isinstance(generated_sentences, str):
-		return [generated_sentences]
-	else:
-		return generated_sentences
-
-
-def save_experiment(
-	exp_dir: Path, transformer: keras.Model, sp_en: spm.SentencePieceProcessor, sp_ary: spm.SentencePieceProcessor
-) -> Path:
-	logger.info("Saving model...")
-
-	# Save model
-	model_path = exp_dir / "ary.keras"
-	transformer.save(model_path)
-
-	# Save vocabularies
-	en_vocab = [sp_en.id_to_piece(i) for i in range(sp_en.get_piece_size())]
-	(exp_dir / "eng_vocab.txt").write_text("\n".join(en_vocab), encoding="utf-8")
-
-	ary_vocab = [sp_ary.id_to_piece(i) for i in range(sp_ary.get_piece_size())]
-	(exp_dir / "ary_vocab.txt").write_text("\n".join(ary_vocab), encoding="utf-8")
-
-	return exp_dir
-
-
-# Evaluate on test set
-def eval_on_test(transformer: keras.Model, test_ds: TranslationDataset) -> tuple[float, float]:
-	logger.info("Evaluating model on the test set...")
-
-	test_loss, test_acc = transformer.evaluate(test_ds, verbose=0)
-
-	logger.info(f"Test loss: <blue>{test_loss:.4f}</blue>")
-	logger.info(f"Test accuracy: <blue>{test_acc:.4f}</blue>")
-	return test_loss, test_acc
-
-
-# Qualitative inference examples
-def sample_inference(
-	exp_dir: Path,
-	transformer: keras.Model,
-	sp_en: spm.SentencePieceProcessor,
-	sp_ary: spm.SentencePieceProcessor,
-	test_pairs: SentPairList,
-) -> None:
-	NUM_EXAMPLES = 20
-	examples = []
-
-	for eng, ref in random.sample(test_pairs, NUM_EXAMPLES):
-		pred = decode_sequences(transformer, sp_en, sp_ary, [eng])[0]
-		examples.append(
-			{
-				"english": eng,
-				"reference_darija": ref,
-				"predicted_darija": pred,
-			}
-		)
-
-	# Save examples
-	with open(exp_dir / "inference_examples.json", "w", encoding="utf-8") as f:
-		json.dump(examples, f, ensure_ascii=False, indent=2)
-
-
 @app.command()
 def main(with_swiglu: Annotated[bool, typer.Option(help="Use a Decoder w/ RMSNorm & a SwiGLU FFN")] = False):
-	global EXP_NAME
-	if with_swiglu:
-		EXP_NAME += "_swiglu"
+	ctx = TrainContext(with_swiglu)
 
-	ds = load_dataset()
-	pairs = clean_dataset(ds)
-	train_pairs, val_pairs, test_pairs = split_dataset(pairs)
+	ctx.load_dataset()
+	ctx.lean_dataset()
+	ctx.split_dataset()
 
-	timestamp = time.strftime("%Y%m%d_%H%M%S")
-	exp_dir = REPORTS_DIR / f"{EXP_NAME}_{timestamp}"
-	exp_dir.mkdir(parents=True, exist_ok=True)
-	logger.info(f"Saving experiment run to <magenta>{exp_dir}</magenta>")
+	ctx.train_tokenizers()
+	ctx.load_trained_tokenizers()
 
-	train_tokenizers(exp_dir, train_pairs)
-	sp_en, sp_ary = load_tokenizers(exp_dir)
-
-	eng_vocab_size = sp_en.get_piece_size()
-	ary_vocab_size = sp_ary.get_piece_size()
-
-	logger.info(f"ENG vocab size: <green>{eng_vocab_size}</green>")
-	logger.info(f"ARY vocab size: <green>{ary_vocab_size}</green>")
-
-	train_ds = TranslationDataset(sp_en, sp_ary, train_pairs)
-	val_ds = TranslationDataset(sp_en, sp_ary, val_pairs)
-	test_ds = TranslationDataset(sp_en, sp_ary, test_pairs)
+	ctx.batch_dataset()
 
 	logger.info("Sanity-check of the data splits:")
 	logger.info("train:")
-	print(train_ds[0])
+	print(ctx.train_ds[0])
 	logger.info("val:")
-	print(val_ds[0])
+	print(ctx.val_ds[0])
 	logger.info("test:")
-	print(test_ds[0])
+	print(ctx.test_ds[0])
 
-	transformer = build_model(eng_vocab_size, ary_vocab_size)
-	transformer, history = train_model(exp_dir, timestamp, transformer, train_ds, val_ds)
+	ctx.build_model()
+	ctx.train_model()
 
-	save_experiment(exp_dir, transformer, sp_en, sp_ary)
-	plot_training(exp_dir, history)
+	ctx.save_experiment()
+	ctx.plot_training()
 
-	test_loss, test_acc = eval_on_test(transformer, test_ds)
+	test_loss, test_acc = ctx.eval_on_test()
 
 	# Inference
 	logger.info("Running an inference test on the trained model")
 	for _ in range(5):
-		s = random.choice(test_pairs)[0]
+		s = random.choice(ctx.test_pairs)[0]
 		print("ENG:", s)
-		print("ARY:", decode_sequences(transformer, sp_en, sp_ary, [s])[0])
+		print("ARY:", ctx.decode_sequences([s])[0])
 		print()
 
-	sample_inference(exp_dir, transformer, sp_en, sp_ary, test_pairs)
+	ctx.sample_inference(ctx.test_pairs)
 
 	# Save training metadata
 	experiment_metadata = {
-		"experiment_name": EXP_NAME,
-		"timestamp": timestamp,
+		"experiment_name": ctx.exp_name,
+		"timestamp": ctx.timestamp,
 		"dataset": "Atlaset_corpus",
-		"num_pairs_total": len(pairs),
-		"num_train": len(train_pairs),
-		"num_val": len(val_pairs),
-		"num_test": len(test_pairs),
+		"num_pairs_total": len(ctx.pairs),
+		"num_train": len(ctx.train_pairs),
+		"num_val": len(ctx.val_pairs),
+		"num_test": len(ctx.test_pairs),
 		"sequence_length": SEQUENCE_LENGTH,
 		"batch_size": BATCH_SIZE,
 		"embedding_dim": EMBED_DIM,
@@ -549,13 +537,13 @@ def main(with_swiglu: Annotated[bool, typer.Option(help="Use a Decoder w/ RMSNor
 		"num_heads": NUM_HEADS,
 		"optimizer": "RMSprop",
 		"epochs": EPOCHS,
-		"eng_vocab_size": eng_vocab_size,
-		"ary_vocab_size": ary_vocab_size,
+		"eng_vocab_size": ctx.eng_vocab_size,
+		"ary_vocab_size": ctx.ary_vocab_size,
 		"test_loss": float(test_loss),
 		"test_accuracy": float(test_acc),
 	}
 
-	with open(exp_dir / "experiments_metadata.json", "w", encoding="utf-8") as f:
+	with (ctx.exp_dir / "experiments_metadata.json").open("w", encoding="utf-8") as f:
 		json.dump(experiment_metadata, f, indent=2)
 
 	logger.info("Experiment artifacts saved")
