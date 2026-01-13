@@ -208,9 +208,11 @@ print(train_ds[0])
 print(val_ds[0])
 print(test_ds[0])
 
+
 # ============================================================
 # 8. Transformer layers
 # ============================================================
+@keras.saving.register_keras_serializable()
 class TransformerEncoder(layers.Layer):
     def __init__(self, embed_dim, dense_dim, num_heads, **kwargs):
         super().__init__(**kwargs)
@@ -234,6 +236,8 @@ class TransformerEncoder(layers.Layer):
         proj = self.dense_proj(x)
         return self.layernorm_2(x + proj)
 
+
+@keras.saving.register_keras_serializable()
 class PositionalEmbedding(layers.Layer):
     def __init__(self, sequence_length, vocab_size, embed_dim):
         super().__init__()
@@ -248,6 +252,8 @@ class PositionalEmbedding(layers.Layer):
     def compute_mask(self, x, mask=None):
         return ops.not_equal(x, 0)
 
+
+@keras.saving.register_keras_serializable()
 class TransformerDecoder(layers.Layer):
     def __init__(self, embed_dim, latent_dim, num_heads):
         super().__init__()
@@ -283,7 +289,6 @@ class TransformerDecoder(layers.Layer):
         attn1 = self.attn_1(x, x, attention_mask=self_mask)
         x = self.norm_1(x + attn1)
 
-
         if enc_mask is not None:
             enc_mask = ops.cast(enc_mask[:, None, :], "int32")
 
@@ -299,6 +304,7 @@ class TransformerDecoder(layers.Layer):
         j = ops.arange(n)
         mask = ops.cast(i >= j, "int32")
         return ops.expand_dims(mask, 0)
+
 # ============================================================
 # 11. Build model
 # ============================================================
