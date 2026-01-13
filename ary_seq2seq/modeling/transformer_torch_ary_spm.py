@@ -180,6 +180,8 @@ def encode_ary(text):
 # ============================================================
 class TranslationDataset(keras.utils.PyDataset):
     def __init__(self, pairs):
+        super().__init__(**kwargs)
+
         self.eng, self.ary = zip(*pairs)
 
     def __len__(self):
