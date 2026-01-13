@@ -2,10 +2,17 @@
 # GLOBALS                                                                       #
 #################################################################################
 
+# Because we expect basic amenities to actually work...
+SHELL := /usr/bin/bash
+
 PROJECT_NAME = ary_seq2seq
 PYTHON_VERSION = 3.12
 PYTHON_INTERPRETER = python$(PYTHON_VERSION)
 PROJECT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+
+MODEL_FILES := ary-pretrained.tar.gz
+MODELS := $(patsubst %,models/%,$(MODEL_FILES))
+MODELS_CACHE := models/pretrained
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -44,16 +51,31 @@ format:
 ## Download Data from storage system
 .PHONY: sync_data_down
 sync_data_down:
-	aws s3 sync s3://tal-m2-trad/data/ \
-		data/
+	aws s3 sync s3://tal-m2-trad/models/ \
+		models/
 
 
 ## Upload Data to storage system
 .PHONY: sync_data_up
 sync_data_up:
-	aws s3 sync data/ \
-		s3://tal-m2-trad/data
+	aws s3 sync models/ \
+		s3://tal-m2-trad/models
+	for model in $(MODELS) ; do \
+		aws s3api put-object-acl --bucket tal-m2-trad --acl public-read --key $${model} ; \
+	done
 
+## Download experiment data w/o S3
+$(MODELS):
+	mkdir -p models
+	wget "https://tal-m2-trad.s3.gra.io.cloud.ovh.net/$@" -O "$@"
+
+$(MODELS_CACHE):
+	for model in $(MODELS) ; do \
+		[[ "$${model}" == *.tar.gz ]] && tar xvf "$${model}" -C models/ ; \
+	done
+
+.PHONY: download_data
+download_data: $(MODELS) $(MODELS_CACHE)
 
 
 

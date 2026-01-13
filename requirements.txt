@@ -3,10 +3,14 @@ datasets
 keras
 keras_hub
 loguru
+matplotlib
 pip
 python-dotenv
 rich
 ruff
+sacrebleu
+sentencepiece
+textual
 tqdm
 typer
 -e .

@@ -18,11 +18,7 @@ EN-ARY NMT school project
 │   ├── processed      <- The final, canonical data sets for modeling.
 │   └── raw            <- The original, immutable data dump.
 │
-├── models             <- Trained and serialized models, model predictions, or model summaries
-│
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
+├── notebooks          <- Exploratory notebooks.
 │
 ├── pyproject.toml     <- Project configuration file with package metadata for 
 │                         ary_seq2seq and configuration for tools like black
@@ -43,18 +39,59 @@ EN-ARY NMT school project
     │
     ├── config.py               <- Store useful variables and configuration
     │
-    ├── dataset.py              <- Scripts to download or generate data
-    │
-    ├── features.py             <- Code to create features for modeling
-    │
     ├── modeling                
     │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
+    |   |
+    │   ├── ary_kh.py                     <- Keras-Hub implementation of the model
+    |   |
+    |   ├── transformer_torch_ary_spm.py  <- Raw Keras implementation of the model
+    |   |
+    │   ├── prompt.py                     <- A small CLI app to play with the pretrained model
+    |   |
+    │   └── {colmo,layers}.py             <- Support code for custom Keras-Hub layers
     │
-    └── plots.py                <- Code to create visualizations
+    ├── eval.py                 <- Script used to generate evaluation data
+    |
+    ├── bleu.py                 <- Script used to compute evaluation scores
+    │
+    └── dataset.py              <- Scripts to download or generate data
 ```
 
 --------
 
-Tested w/ Python 3.12
+Tested w/ Python 3.12 (as `tensorflow-text` is not packaged for anything higher at the time of writing).
+
+## Setup the environment
+
+The environment expects to be managed via [uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+
+```bash
+make create_environment
+source .venv/bin/activate
+make requirements
+```
+
+NOTE: Downloading the dataset requires to be logged in to HF, and to have accepted the T&C for the `atlasia/Atlaset` dataset.
+
+```bash
+python ary_seq2seq/dataset.py
+```
+
+Training the Hub variant can be started via
+```bash
+python ary_seq2seq/modeling/ary_kh.py [--with-swiglu]
+```
+
+## Inference
+
+A pretrained model can be download via
+
+```bash
+make download model
+```
+
+You can then play with it in a CLI app:
+```bash
+python ary_seq2seq/modeling/prompt.py
+```

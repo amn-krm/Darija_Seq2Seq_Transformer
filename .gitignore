@@ -1,6 +1,12 @@
 # Data
 /data/
 
+# Model runs
+/reports/darija_en_*/
+/models/darija_en_*/
+/models/pretrained/
+/models/ary-pretrained.tar.gz
+
 # Mac OS-specific storage files
 .DS_Store
 
