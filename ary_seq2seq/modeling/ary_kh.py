@@ -327,7 +327,7 @@ class TrainContext:
 
 		# Define a function that outputs the next token's probability given the input sequence
 		def next(prompt: tf.Tensor, cache, index: int):
-			logits = self.transformer([encoder_input_tokens, prompt])[:, index - 1, :]
+			logits = self.transformer([encoder_input_tokens, prompt], training=False)[:, index - 1, :]
 			# Ignore hidden states for now; only needed for contrastive search
 			hidden_states = None
 			return logits, hidden_states, cache
