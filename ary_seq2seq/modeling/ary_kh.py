@@ -369,11 +369,8 @@ class TrainContext:
 		logger.info("Inferencing...")
 		examples = []
 
-		# Beware, black magic zip trickery incoming...
-		# (i.e., unzip a list of tuples into a tuple of lists).
-		engs, refs = map(list, zip(*random.sample(test_pairs, num_examples)))
-		preds = self.decode_sequences(engs)
-		for eng, ref, pred in zip(engs, refs, preds):
+		for eng, ref in random.sample(test_pairs, num_examples):
+			pred = self.decode_sequences([eng])[0]
 			examples.append(
 				{
 					"english": eng,
