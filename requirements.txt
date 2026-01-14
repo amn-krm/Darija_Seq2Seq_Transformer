@@ -12,5 +12,6 @@ sacrebleu
 sentencepiece
 textual
 tqdm
+torch
 typer
 -e .
