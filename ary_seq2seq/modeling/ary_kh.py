@@ -366,10 +366,14 @@ class TrainContext:
 	def sample_inference(
 		self, test_pairs: SentPairList, num_examples: int = 20, filename: str = "inference_examples.json"
 	) -> None:
+		logger.info("Inferencing...")
 		examples = []
 
-		for eng, ref in random.sample(test_pairs, num_examples):
-			pred = self.decode_sequences([eng])[0]
+		# Beware, black magic zip trickery incoming...
+		# (i.e., unzip a list of tuples into a tuple of lists).
+		engs, refs = map(list, zip(*random.sample(test_pairs, num_examples)))
+		preds = self.decode_sequences(engs)
+		for eng, ref, pred in zip(engs, refs, preds):
 			examples.append(
 				{
 					"english": eng,
