@@ -64,6 +64,10 @@ logger.opt = partial(logger.opt, colors=True)
 
 app = typer.Typer()
 
+# Dataset pruning
+DATA_MAX_ROWS = 500_000
+DATA_MAX_WORDS = 50
+
 # parms/hparms
 BATCH_SIZE = 128
 EPOCHS = 20
@@ -148,10 +152,7 @@ class TrainContext:
 		logger.info("Cleaning dataset...")
 		pairs: SentPairList = []
 
-		MAX_ROWS = 500_000
-		MAX_WORDS = 50
-
-		for ex in self.dataset["train"].select(range(MAX_ROWS)):
+		for ex in self.dataset["train"].select(range(DATA_MAX_ROWS)):
 			try:
 				meta = ast.literal_eval(ex["metadata"])
 			except Exception as e:
@@ -163,9 +164,9 @@ class TrainContext:
 
 			if not en or not darija:
 				continue
-			if not (3 <= len(en.split()) <= MAX_WORDS):
+			if not (3 <= len(en.split()) <= DATA_MAX_WORDS):
 				continue
-			if not (3 <= len(darija.split()) <= MAX_WORDS):
+			if not (3 <= len(darija.split()) <= DATA_MAX_WORDS):
 				continue
 
 			pairs.append((en, darija))
@@ -326,7 +327,7 @@ class TrainContext:
 
 		# Define a function that outputs the next token's probability given the input sequence
 		def next(prompt: tf.Tensor, cache, index: int):
-			logits = self.transformer([encoder_input_tokens, prompt])[:, index - 1, :]
+			logits = self.transformer([encoder_input_tokens, prompt], training=False)[:, index - 1, :]
 			# Ignore hidden states for now; only needed for contrastive search
 			hidden_states = None
 			return logits, hidden_states, cache

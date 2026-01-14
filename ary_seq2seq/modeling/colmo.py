@@ -59,12 +59,13 @@ class FFNSwiGLU2(Layer):
 			kernel_initializer="glorot_uniform",
 			name="swiglu_gate",
 		)
+		self.gate.build(input_shape)
 		self.linear = Dense(
 			self.intermediate_dim, use_bias=False, kernel_initializer="glorot_uniform", name="swiglu_linear"
 		)
+		self.linear.build(input_shape)
 		self.multiply = Multiply(name="swiglu_out")
-
-		super(FFNSwiGLU2, self).build(input_shape)
+		self.built = True
 
 	def call(self, inputs):
 		gated = self.gate(inputs)
