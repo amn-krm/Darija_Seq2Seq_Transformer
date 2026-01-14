@@ -9,7 +9,9 @@ from keras.saving import load_model
 from loguru import logger
 import typer
 
+# This'll take care of importing our custom layers for deserialization
 from ary_seq2seq.modeling.ary_kh import TrainContext
+from ary_seq2seq.modeling.torch_layers import TransformerEncoder, PositionalEmbedding, TransformerDecoder
 
 random.seed(42)
 
