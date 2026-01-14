@@ -3,6 +3,8 @@
 from functools import partial
 from pathlib import Path
 import random
+
+random.seed(42)  # noqa: E402
 from typing import Annotated
 
 from keras.saving import load_model
@@ -12,8 +14,6 @@ import typer
 # This'll take care of importing our custom layers for deserialization
 from ary_seq2seq.modeling.ary_kh import TrainContext
 from ary_seq2seq.modeling.torch_layers import PositionalEmbedding, TransformerDecoder, TransformerEncoder  # noqa: F401
-
-random.seed(42)
 
 
 # Simply subclass our TrainContext to keep it DRY
@@ -52,7 +52,7 @@ def main(
 	ctx.clean_dataset()
 	ctx.split_dataset()
 
-	ctx.sample_inference(ctx.test_pairs, 100, "test_predictions.json")
+	ctx.sample_inference(ctx.test_pairs, 1000, "test_predictions.json")
 
 
 if __name__ == "__main__":
