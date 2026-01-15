@@ -86,16 +86,18 @@ FEED_FORWARD_DIM = int(EMBED_DIM * 8 / 3)
 
 # Text standardization
 if NORMALIZE_TOKENS:
+
 	def standardize(text: str) -> str:
 		return text.lower().strip()
 
-	def standardize_tuple(sentences: tuple[str]) -> tuple[str]:
+	def standardize_tuple(sentences: tuple[str, ...]) -> tuple[str, ...]:
 		return tuple(map(standardize, sentences))
 else:
+
 	def standardize(text: str) -> str:
 		return text
 
-	def standardize_tuple(sentences: tuple[str]) -> tuple[str]:
+	def standardize_tuple(sentences: tuple[str, ...]) -> tuple[str, ...]:
 		return sentences
 
 
