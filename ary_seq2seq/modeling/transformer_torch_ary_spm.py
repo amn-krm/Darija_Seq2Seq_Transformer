@@ -35,6 +35,9 @@ from ary_seq2seq.dataset import load_clean_dataset
 def standardize(text):
     return text.lower().strip()
 
+# ============================================================
+# 4. Load Atlaset dataset
+# ============================================================
 DATASET_FRACTION = 1.0
 pairs = load_clean_dataset(DATASET_FRACTION)
 
