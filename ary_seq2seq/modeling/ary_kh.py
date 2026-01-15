@@ -193,10 +193,10 @@ class TrainContext:
 	def train_tokenizers(self) -> None:
 		with contextlib.chdir(self.exp_dir):
 			logger.info("Training EN tokenizer...")
-			train_spm((p[0] for p in self.train_pairs), "spm_en")
+			train_spm((standardize(p[0]) for p in self.train_pairs), "spm_en")
 
 			logger.info("Training ARY tokenizer...")
-			train_spm((p[1] for p in self.train_pairs), "spm_ary")
+			train_spm((standardize(p[1]) for p in self.train_pairs), "spm_ary")
 
 	# Load SentencePiece models
 	def load_trained_tokenizers(self) -> None:
@@ -311,6 +311,8 @@ class TrainContext:
 
 	# Inference
 	def decode_sequences(self, input_sentences: list[str]) -> list[str]:
+		input_sentences = list(map(standardize, input_sentences))
+
 		batch_size = 1
 
 		# Tokenize the encoder input
@@ -415,8 +417,8 @@ class TranslationDataset(keras.utils.PyDataset):
 		start = idx * BATCH_SIZE
 		end = start + BATCH_SIZE
 
-		enc = self.enc_start_end_packer(tf.ragged.constant(self.sp_en.encode(list(self.eng[start:end]))))
-		dec = self.dec_start_end_packer(tf.ragged.constant(self.sp_ary.encode(list(self.ary[start:end]))))
+		enc = self.enc_start_end_packer(tf.ragged.constant(self.sp_en.encode(list(standardize(self.eng[start:end])))))
+		dec = self.dec_start_end_packer(tf.ragged.constant(self.sp_ary.encode(list(standardize(self.ary[start:end])))))
 
 		return (
 			{
