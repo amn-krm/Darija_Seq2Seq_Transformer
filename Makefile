@@ -72,9 +72,9 @@ sync_data_up:
 	for model in $(MODELS) ; do \
 		aws s3api put-object-acl --bucket tal-m2-trad --acl public-read --key $${model} ; \
 	done
-	for dataset in $(DATASETS) ; do \
-		aws s3api put-object-acl --bucket tal-m2-trad --acl public-read --key $${dataset} ; \
-	done
+	# for dataset in $(DATASETS) ; do \
+	# 	aws s3api put-object-acl --bucket tal-m2-trad --acl public-read --key $${dataset} ; \
+	# done
 
 ## Download experiment data w/o S3
 $(MODELS):
