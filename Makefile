@@ -58,11 +58,15 @@ format:
 sync_data_down:
 	aws s3 sync s3://tal-m2-trad/models/ \
 		models/
+	aws s3 sync s3://tal-m2-trad/data/ \
+		data/
 
 
 ## Upload Data to storage system
 .PHONY: sync_data_up
 sync_data_up:
+	aws s3 sync data/processed/ \
+		s3://tal-m2-trad/data/processed
 	aws s3 sync models/ \
 		s3://tal-m2-trad/models
 	for model in $(MODELS) ; do \
