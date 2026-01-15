@@ -34,10 +34,11 @@ from ary_seq2seq.dataset import load_clean_dataset
 # ============================================================
 NORMALIZE_TOKENS = False
 
-def standardize(text):
-    if NORMALIZE_TOKENS:
+if NORMALIZE_TOKENS:
+    def standardize(text):
         return text.lower().strip()
-    else:
+else:
+    def standardize(text):
         return text
 
 # ============================================================
