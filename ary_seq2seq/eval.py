@@ -41,7 +41,7 @@ app = typer.Typer()
 @app.command()
 def main(
 	model_path: Annotated[
-		Path, typer.Option("--model-dir", "-d", help="Path to the folder containing the serialized model to evaluate")
+		Path, typer.Argument(help="Path to the folder containing the serialized model to evaluate")
 	],
 ):
 	logger.info(f"Loading model @ <magenta>{model_path}</magenta>")

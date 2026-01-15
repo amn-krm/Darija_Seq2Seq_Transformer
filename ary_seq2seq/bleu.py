@@ -36,7 +36,7 @@ def print_scores(scoring_file: Path) -> None:
 
 
 @app.command()
-def main(scoring_file: Annotated[Path, typer.Option("--file", "-f", help="Path to the JSON file to score")]):
+def main(scoring_file: Annotated[Path, typer.Argument(help="Path to the JSON file to score")]):
 	print_scores(scoring_file)
 
 
