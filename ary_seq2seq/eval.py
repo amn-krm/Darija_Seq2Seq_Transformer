@@ -48,8 +48,7 @@ def main(
 
 	ctx = InferenceContext(model_path)
 
-	ctx.load_dataset()
-	ctx.clean_dataset()
+	ctx.load_clean_dataset()
 	ctx.split_dataset()
 
 	ctx.sample_inference(ctx.test_pairs, 1000, "test_predictions.json")
