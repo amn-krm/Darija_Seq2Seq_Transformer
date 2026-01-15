@@ -78,12 +78,12 @@ def clean_dataset(dataset: DatasetDict) -> SentPairDicts:
 	return pairs
 
 
-def load_clean_dataset() -> SentPairList:
+def load_clean_dataset(fraction: float = 1.0) -> SentPairList:
 	df = pl.read_parquet(CLEAN_DATASET)
 
-	# NOTE: We could sample 321668 rows to match the previous behavior,
-	#       but we only have a fraction more right now (349136)...
-	return [tuple(d.values()) for d in df.to_dicts()]
+	# NOTE: Previous behavior led to 321668 rows,
+	#       we now have 349136 at most...
+	return [tuple(d.values()) for d in df.sample(fraction=fraction).to_dicts()]
 
 
 @app.command()

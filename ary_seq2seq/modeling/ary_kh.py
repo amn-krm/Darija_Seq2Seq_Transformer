@@ -59,6 +59,8 @@ logger.opt = partial(logger.opt, colors=True)
 app = typer.Typer()
 
 # parms/hparms
+DATASET_FRACTION = 1.0
+
 BATCH_SIZE = 128
 EPOCHS = 20
 SEQUENCE_LENGTH = 50
@@ -116,7 +118,7 @@ class TrainContext:
 
 	def load_clean_dataset(self) -> None:
 		logger.info("Loading clean dataset from disk...")
-		self.pairs = load_clean_dataset()
+		self.pairs = load_clean_dataset(DATASET_FRACTION)
 
 	def split_dataset(self) -> None:
 		logger.info("Splitting dataset...")
