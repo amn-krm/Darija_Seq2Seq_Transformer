@@ -4,90 +4,42 @@
 # 1. Backend setup
 # ============================================================
 import os
+
 os.environ["KERAS_BACKEND"] = "torch"
 
 import torch
+
 torch.autograd.set_detect_anomaly(True)
 
 # ============================================================
 # 2. Imports
 # ============================================================
-import math
-import random
-import re
-import ast
-import html
-import unicodedata
-import tempfile
 import json
-import time
+import math
 from pathlib import Path
+import random
+import tempfile
+import time
 
-import numpy as np
 import keras
 from keras import layers, ops
-
-from datasets import load_from_disk
+import numpy as np
 import sentencepiece as spm
 
-from ary_seq2seq.config import ATLASET_DATASET
+from ary_seq2seq.dataset import load_clean_dataset
+
 
 # ============================================================
 # 3. Cleaning utilities
 # ============================================================
-HTML_TAG_RE = re.compile(r"<[^>]+>")
-URL_RE = re.compile(r"https?://\S+|www\.\S+")
-REF_RE = re.compile(r"\[\d+\]")
-BIDI_RE = re.compile(r"[\u200e\u200f\u202a-\u202e\u2066-\u2069\u061c]")
-
-def clean_text(text):
-    if not text:
-        return ""
-    text = html.unescape(text)
-    text = HTML_TAG_RE.sub(" ", text)
-    text = URL_RE.sub(" ", text)
-    text = REF_RE.sub("", text)
-    text = BIDI_RE.sub("", text)
-    text = "".join(
-        ch for ch in text
-        if not unicodedata.category(ch).startswith("So")
-    )
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
 def standardize(text):
     return text.lower().strip()
 
 # ============================================================
 # 4. Load Atlaset dataset
 # ============================================================
-ds = load_from_disk(ATLASET_DATASET)
-
-pairs = []
-MAX_ROWS = 500_000
-MAX_WORDS = 50
-EPOCHS = 16
-
-for ex in ds["train"].select(range(MAX_ROWS)):
-    try:
-        meta = ast.literal_eval(ex["metadata"])
-    except Exception:
-        continue
-
-    en = clean_text(meta.get("english", ""))
-    darija = clean_text(ex["text"])
-
-    if not en or not darija:
-        continue
-    if not (3 <= len(en.split()) <= MAX_WORDS):
-        continue
-    if not (3 <= len(darija.split()) <= MAX_WORDS):
-        continue
-
-    pairs.append((en, f"[start] {darija} [end]"))
-
-print("Total clean pairs:", len(pairs))
-print(pairs[:5])
+DATASET_FRACTION = 1.0
+pairs = load_clean_dataset(DATASET_FRACTION)
 
 # ============================================================
 # 5. Train / Val / Test split
@@ -215,7 +167,7 @@ print(test_ds[0])
 # ============================================================
 # 8. Transformer layers
 # ============================================================
-from ary_seq2seq.modeling.torch_layers import TransformerEncoder, PositionalEmbedding, TransformerDecoder
+from ary_seq2seq.modeling.torch_layers import PositionalEmbedding, TransformerDecoder, TransformerEncoder
 
 # ============================================================
 # 11. Build model
@@ -249,6 +201,7 @@ transformer.summary()
 # ============================================================
 # 12. Train
 # ============================================================
+EPOCHS=20
 transformer.fit(train_ds, epochs=EPOCHS, validation_data=val_ds)
 
 # ============================================================
@@ -291,7 +244,6 @@ for _ in range(5):
 # 15. Save experiment artifacts
 # ============================================================
 import json
-import time
 from pathlib import Path
 
 # -------- experiment directory --------

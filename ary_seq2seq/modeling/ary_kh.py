@@ -23,18 +23,13 @@ os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"  # noqa: E402
 # os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"  # noqa: E402
 random.seed(42)  # noqa: E402
 
-import ast
 import contextlib
 from functools import partial
-import html
 import json
 import math
-import re
 import time
-from typing import Iterator
-import unicodedata
+from typing import Iterator, TypeAlias
 
-from datasets import load_from_disk
 import keras
 
 # Flash Attention should no longer be experimental on my GPU in ROCm...
@@ -43,6 +38,7 @@ from keras import ops
 import keras_hub
 from loguru import logger
 from matplotlib import pyplot as plt
+import polars as pl
 import sentencepiece as spm
 import tensorflow as tf
 from tqdm.rich import tqdm
@@ -53,11 +49,12 @@ from tqdm.rich import tqdm
 import typer
 from typing_extensions import Annotated
 
-from ary_seq2seq.config import ATLASET_DATASET, MODELS_DIR
+from ary_seq2seq.config import CLEAN_DATASET, MODELS_DIR
 from ary_seq2seq.modeling.layers import TransformerDecoderSwiGLU
 
-type SentPair = tuple[str, str]
-type SentPairList = list[SentPair]
+# NOTE: Duplicated from ary_seq2seq.dataset because rocBLAS implodes if we import ast... o_O
+SentPair: TypeAlias = tuple[str, str]
+SentPairList: TypeAlias = list[SentPair]
 
 # Always enable color in loguru
 logger = logger.opt(colors=True)
@@ -65,11 +62,9 @@ logger.opt = partial(logger.opt, colors=True)
 
 app = typer.Typer()
 
-# Dataset pruning
-DATA_MAX_ROWS = 500_000
-DATA_MAX_WORDS = 50
-
 # parms/hparms
+DATASET_FRACTION = 1.0
+
 BATCH_SIZE = 128
 EPOCHS = 20
 SEQUENCE_LENGTH = 50
@@ -86,30 +81,14 @@ NUM_HEADS = 8
 # 8/3 * embedding with SwiGLU to keep n. of computations constant
 FEED_FORWARD_DIM = int(EMBED_DIM * 8 / 3)
 
-# -------- cleaning utilities --------
-HTML_TAG_RE = re.compile(r"<[^>]+>")
-URL_RE = re.compile(r"https?://\S+|www\.\S+")
-REF_RE = re.compile(r"\[\d+\]")
-BIDI_RE = re.compile(r"[\u200e\u200f\u202a-\u202e\u2066-\u2069\u061c]")
-
-
-def clean_text(text: str) -> str:
-	if not text:
-		return ""
-
-	text = html.unescape(text)
-	text = HTML_TAG_RE.sub(" ", text)
-	text = URL_RE.sub(" ", text)
-	text = REF_RE.sub("", text)
-	text = BIDI_RE.sub("", text)
-	text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("So"))
-	text = re.sub(r"\s+", " ", text)
-	return text.strip()
-
 
 # Text standardization
 def standardize(text: str) -> str:
 	return text.lower().strip()
+
+
+def standardize_tuple(sentences: tuple[str]) -> tuple[str]:
+	return tuple(map(standardize, sentences))
 
 
 # Train SentencePiece tokenizers
@@ -145,35 +124,10 @@ class TrainContext:
 		self.exp_dir.mkdir(parents=True, exist_ok=True)
 		logger.info(f"Saving experiment run to <magenta>{self.exp_dir}</magenta>")
 
-	def load_dataset(self) -> None:
-		logger.info("Loading dataset from disk...")
-		self.dataset = load_from_disk(ATLASET_DATASET)
-
-	def clean_dataset(self) -> None:
-		logger.info("Cleaning dataset...")
-		pairs: SentPairList = []
-
-		for ex in self.dataset["train"].select(range(DATA_MAX_ROWS)):
-			try:
-				meta = ast.literal_eval(ex["metadata"])
-			except Exception as e:
-				logger.warning(e)
-				continue
-
-			en = clean_text(meta.get("english", ""))
-			darija = clean_text(ex["text"])
-
-			if not en or not darija:
-				continue
-			if not (3 <= len(en.split()) <= DATA_MAX_WORDS):
-				continue
-			if not (3 <= len(darija.split()) <= DATA_MAX_WORDS):
-				continue
-
-			pairs.append((en, darija))
-
-		logger.info(f"Total clean pairs: <green>{len(pairs)}</green>")
-		self.pairs = pairs
+	def load_clean_dataset(self) -> None:
+		logger.info("Loading clean dataset from disk...")
+		df = pl.read_parquet(CLEAN_DATASET)
+		self.pairs = [tuple(d.values()) for d in df.sample(fraction=DATASET_FRACTION).to_dicts()]
 
 	def split_dataset(self) -> None:
 		logger.info("Splitting dataset...")
@@ -193,10 +147,10 @@ class TrainContext:
 	def train_tokenizers(self) -> None:
 		with contextlib.chdir(self.exp_dir):
 			logger.info("Training EN tokenizer...")
-			train_spm((p[0] for p in self.train_pairs), "spm_en")
+			train_spm((standardize(p[0]) for p in self.train_pairs), "spm_en")
 
 			logger.info("Training ARY tokenizer...")
-			train_spm((p[1] for p in self.train_pairs), "spm_ary")
+			train_spm((standardize(p[1]) for p in self.train_pairs), "spm_ary")
 
 	# Load SentencePiece models
 	def load_trained_tokenizers(self) -> None:
@@ -311,6 +265,8 @@ class TrainContext:
 
 	# Inference
 	def decode_sequences(self, input_sentences: list[str]) -> list[str]:
+		input_sentences = list(map(standardize, input_sentences))
+
 		batch_size = 1
 
 		# Tokenize the encoder input
@@ -415,8 +371,12 @@ class TranslationDataset(keras.utils.PyDataset):
 		start = idx * BATCH_SIZE
 		end = start + BATCH_SIZE
 
-		enc = self.enc_start_end_packer(tf.ragged.constant(self.sp_en.encode(list(self.eng[start:end]))))
-		dec = self.dec_start_end_packer(tf.ragged.constant(self.sp_ary.encode(list(self.ary[start:end]))))
+		enc = self.enc_start_end_packer(
+			tf.ragged.constant(self.sp_en.encode(list(standardize_tuple(self.eng[start:end]))))
+		)
+		dec = self.dec_start_end_packer(
+			tf.ragged.constant(self.sp_ary.encode(list(standardize_tuple(self.ary[start:end]))))
+		)
 
 		return (
 			{
@@ -489,8 +449,7 @@ def build_model(eng_vocab_size: int, ary_vocab_size: int, with_swiglu: bool) -> 
 def main(with_swiglu: Annotated[bool, typer.Option(help="Use a Decoder w/ RMSNorm & a SwiGLU FFN")] = False):
 	ctx = TrainContext(with_swiglu)
 
-	ctx.load_dataset()
-	ctx.clean_dataset()  # NOTE: This should really have only been done once on the full dataset & then saved...
+	ctx.load_clean_dataset()
 	ctx.split_dataset()
 
 	ctx.train_tokenizers()

@@ -1,8 +1,8 @@
 # Custom layers for the Keras/Torch variant
 
-import torch
 import keras
 from keras import layers, ops
+import torch  # noqa: F401
 
 
 @keras.saving.register_keras_serializable()

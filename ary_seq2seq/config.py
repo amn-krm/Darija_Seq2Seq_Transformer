@@ -27,6 +27,7 @@ PROCESSED_DATA_DIR = DATA_DIR / "processed"
 EXTERNAL_DATA_DIR = DATA_DIR / "external"
 
 ATLASET_DATASET = EXTERNAL_DATA_DIR / "atlasia_Atlaset"
+CLEAN_DATASET = PROCESSED_DATA_DIR / "atlaset.parquet"
 
 MODELS_DIR = PROJ_ROOT / "models"
 PRETRAINED_MODEL = MODELS_DIR / "pretrained"

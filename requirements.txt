@@ -5,6 +5,8 @@ keras_hub
 loguru
 matplotlib
 pip
+polars
+polars-splitters
 python-dotenv
 rich
 ruff
