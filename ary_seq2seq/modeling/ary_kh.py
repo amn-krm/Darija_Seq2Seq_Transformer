@@ -83,8 +83,8 @@ def standardize(text: str) -> str:
 	return text.lower().strip()
 
 
-def standardize_pairs(pairs: SentPairList) -> SentPairList:
-	return [(standardize(p[0]), standardize(p[1])) for p in pairs]
+def standardize_tuple(sentences: tuple[str]) -> tuple[str]:
+	return tuple(map(standardize, sentences))
 
 
 # Train SentencePiece tokenizers
@@ -367,10 +367,10 @@ class TranslationDataset(keras.utils.PyDataset):
 		end = start + BATCH_SIZE
 
 		enc = self.enc_start_end_packer(
-			tf.ragged.constant(self.sp_en.encode(list(standardize_pairs(self.eng[start:end]))))
+			tf.ragged.constant(self.sp_en.encode(list(standardize_tuple(self.eng[start:end]))))
 		)
 		dec = self.dec_start_end_packer(
-			tf.ragged.constant(self.sp_ary.encode(list(standardize_pairs(self.ary[start:end]))))
+			tf.ragged.constant(self.sp_ary.encode(list(standardize_tuple(self.ary[start:end]))))
 		)
 
 		return (
